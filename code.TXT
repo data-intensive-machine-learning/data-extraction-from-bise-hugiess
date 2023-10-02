@@ -1,0 +1,59 @@
+import requests
+from bs4 import BeautifulSoup
+import pandas as pd
+from concurrent.futures import ThreadPoolExecutor
+
+# Initialize an empty list to store the data
+data = []
+
+def process_roll_number(roll_number):
+    url = f'https://biseatd.edu.pk/exams/r_hssc23/hssc_dmc_12_a_23.php?id={roll_number}&class=2'
+
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()  # Raise an exception for HTTP errors
+    except requests.exceptions.Timeout:
+        print(f"Request to {url} timed out.")
+        return
+    except requests.exceptions.HTTPError as err:
+        print(f"HTTP error occurred: {err}")
+        return
+
+    soup = BeautifulSoup(response.content, 'html.parser')
+
+    try:
+        roll_no = soup.find('strong', string='Roll No :').find_next('u').text
+        name = soup.find('strong', string='Name :').find_next('u').text
+        group = soup.find('strong', string='Group :').find_next('u').text
+    except AttributeError as e:
+        print(f"Error: {e}. Data not found for roll number {roll_number}.")
+        return
+
+    if "Humanities" not in group:
+        return
+
+    subject_rows = soup.find_all('tr')[1:-2]
+    subject_obtained_marks = {}
+
+    for row in subject_rows:
+        columns = row.find_all('td')
+        subject = columns[0].text
+
+        if len(columns) > 5:
+            obtained_marks = columns[6].text.strip()
+            subject_obtained_marks[subject] = obtained_marks
+
+    total_obtained_marks = soup.find('td', string='Total Marks :').find_next('td').find_next('td').find_next('td').text.strip()
+
+    entry = {'Roll No': roll_no, 'Name': name, 'Group': group, **subject_obtained_marks, 'Total Obtained Marks': total_obtained_marks}
+    data.append(entry)
+
+# Use ThreadPoolExecutor for parallel processing
+with ThreadPoolExecutor(max_workers=10) as executor:
+    executor.map(process_roll_number, range(100100, 150000))
+
+# Create a DataFrame from the list of dictionaries
+df = pd.DataFrame(data)
+
+# Save the DataFrame to an Excel file in the G:\ directory
+df.to_excel('G:\\student_datacomputer_science.xlsx')
